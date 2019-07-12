@@ -1,5 +1,7 @@
+import getopt
 import logging
 import re
+import sys
 from collections import deque
 
 logging.basicConfig()
@@ -25,8 +27,8 @@ class funcMacro:
         :param declaration: function declaration passed in the form of string eg. "add(a,b)"
         :param expression:  example: "a+b"
         """
-        split_string = re.split('(\(.*\))', declaration)
-        self.name = text[:text.index('(')]
+
+        self.name = declaration[:declaration.index('(')]
 
         self.params = funcMacro.getparams(declaration)
 
@@ -34,12 +36,11 @@ class funcMacro:
 
         log.debug(expression)
         for i in range(len(tokens)):
-            if (tokens[i] in self.params):
+            if tokens[i] in self.params:
                 tokens[i] = '{' + str(self.params.index(tokens[i])) + '}'
 
         self.expression = ''.join(tokens)
         log.debug(self.expression)
-
 
     @staticmethod
     def getparams(text):
@@ -56,22 +57,22 @@ class funcMacro:
         paramtext = deque(paramtext)
         count = 0
 
-        while (len(paramtext)):
+        while len(paramtext):
 
-            if (paramtext[0] == '('):
+            if paramtext[0] == '(':
                 count += 1
-                if (count > 1):
+                if count > 1:
                     word += paramtext.popleft()
                 else:
                     paramtext.popleft()
-            elif (paramtext[0] == ')'):
+            elif paramtext[0] == ')':
                 count -= 1
-                if (count):
+                if count:
                     word += paramtext.popleft()
                 else:
                     param += [word]
                     break
-            elif (count == 1 and paramtext[0] == ','):
+            elif count == 1 and paramtext[0] == ',':
                 paramtext.popleft()
                 param += [word]
                 word = ''
@@ -81,7 +82,7 @@ class funcMacro:
             raise Exception("not a functional macro expression" + " " + text)
         return param
 
-    def replacemacro(self, params):
+    def replace_macro(self, params):
         """
 
         :param params: custom parameter to replace the parameter in the original expression
@@ -91,10 +92,7 @@ class funcMacro:
         return self.expression.format(*params)
 
 
-
-
 class Preprocessor:
-
     separator = '\n\n'
     __libpath = None
 
@@ -116,7 +114,7 @@ class Preprocessor:
         texts = deque(re.split('(\\n)', self.text))
         texts_n = []
 
-        while (texts):
+        while texts:
             token = texts.popleft()
             if token and token[0] == '#':
                 texts_n += [token]
@@ -129,32 +127,32 @@ class Preprocessor:
         texts_n = [text for text in texts_n if text]
         return texts_n
 
-    def removeComment(self) -> list:
+    def remove_comment(self) -> list:
         """
         Description: remove comments from text
         :return: text without comments
         """
-        text = deque(self.text)
+        text: deque[str] = deque(self.text)
         quote = False
         newtext = ''
-        while (text):
+        while text:
             char = text.popleft()
-            if (char == '"'):
+            if char == '"':
                 quote = not quote
                 newtext += char
-            elif (char == '\n'):
+            elif char == '\n':
                 quote = False
                 newtext += char
-            elif (char == '/' and quote == False):
+            elif char == '/' and quote == False:
                 next = text.popleft()
-                if (next == '/'):
-                    while (text.popleft() != '\n'):
+                if next == '/':
+                    while text.popleft() != '\n':
                         continue
                     else:
                         newtext += '\n'
-                elif (next == '*'):
+                elif next == '*':
 
-                    while (text.popleft() != '*' or text[0] != '/'):
+                    while text.popleft() != '*' or text[0] != '/':
                         continue
                     else:
                         text.popleft()
@@ -168,39 +166,38 @@ class Preprocessor:
 
     def preprocess(self) -> str:
 
-        self.text = self.removeComment()
+        self.text = self.remove_comment()
 
         texts = deque(self.tokenize())
 
         newtext = deque()
 
-
-        while (texts):
+        while texts:
             text = texts.popleft()
 
             # preprocessor directives
-            if (self.__isPreprocessorDirective(text)):
-                type = self.__checkDirType(text)
+            if self.__is_preprocessor_directive(text):
+                type = self.__check_dirtype(text)
 
-                if (type == 'MACROS'):
+                if type == 'MACROS':
                     textl = re.split(' ', text)
                     self.macros[textl[1]] = textl[2]
 
-                elif (type == 'UNDEF'):
+                elif type == 'UNDEF':
                     textl = re.split(' ', text)
                     del (self.macros[textl[1]])
 
-                elif (type in ('FILEINCL', 'STDLIB')):
+                elif type in ('FILEINCL', 'STDLIB'):
                     search = re.search('(".*")|(\'.*\')', text)
                     filename = text[search.start() + 1:search.end() - 1]
-                    if (type == 'FILEINCL'):
+                    if type == 'FILEINCL':
                         nfile = Preprocessor.read_file(filename)
                     else:
                         nfile = Preprocessor.read_file(Preprocessor.__libpath + filename)
                     processed_nfile = Preprocessor(nfile).preprocess()
                     newtext.appendleft(processed_nfile)
 
-                elif (type == 'FUNC'):
+                elif type == 'FUNC':
 
                     textl = re.split(' ', text)
 
@@ -210,54 +207,49 @@ class Preprocessor:
 
 
             else:
-                if (text in self.macros.keys()):
+                if text in self.macros.keys():
                     text = self.macros[text]
                     newtext.append(text)
 
 
 
-                elif (text in self.func.keys() and texts[0] == '('):
+                elif text in self.func.keys() and texts[0] == '(':
                     count = 1
 
                     next = texts.popleft()
-                    while (texts):
-                        if (texts[0] == '('):
+                    while texts:
+                        if texts[0] == '(':
                             count += 1
-                        elif (texts[0] == ')'):
+                        elif texts[0] == ')':
                             count -= 1
                         next += texts.popleft()
-                        if (not count):
+                        if not count:
                             break
-                    newtext.append(self.replacefuncmacros(text + next))
+                    newtext.append(self.replace_func_macros(text + next))
                 else:
                     newtext.append(text)
 
-
-
-                        
-
-
         return ''.join(list(newtext))
 
-    def replacefuncmacros(self, text) -> str:
+    def replace_func_macros(self, text) -> str:
 
-        fmacros = self.checkfuncmacros(text)
-        if (fmacros):
+        fmacros = self.check_func_macros(text)
+        if fmacros:
             params = funcMacro.getparams(text)
-            params = [self.replacefuncmacros(param) for param in params]
-            return fmacros.replacemacro(params)
+            params = [self.replace_func_macros(param) for param in params]
+            return fmacros.replace_macro(params)
 
         return text
 
-    def checkfuncmacros(self, text):
+    def check_func_macros(self, text):
 
         if (re.match('^.+\(.+\)$', text) and text[:text.index('(')] in self.func.keys()):
             return self.func[text[:text.index('(')]]
 
         return False
 
-
-    def __isPreprocessorDirective(self, text):
+    @staticmethod
+    def __is_preprocessor_directive(text):
         """
         Description:
         :param text:
@@ -267,30 +259,54 @@ class Preprocessor:
             return True
         return False
 
-    def __checkDirType(self, text):
+    @staticmethod
+    def __check_dirtype(text):
 
         texts = re.split(' ', text)
 
-        if (texts[0] == '#define'):
-            if ('(' in texts[1]):
+        if texts[0] == '#define':
+            if '(' in texts[1]:
                 return 'FUNC'
             return 'MACROS'
 
-        if (texts[0] == '#undef'):
+        if texts[0] == '#undef':
             return 'UNDEF'
 
-        if (re.match('^#include( )*<.*>', text)):
+        if re.match('^#include( )*<.*>', text):
             return 'STDLIB'
 
-        if (re.match('^#include( )*(".*")|(\'.*\')', text)):
+        if re.match('^#include( )*(".*")|(\'.*\')', text):
             return 'FILEINCL'
 
 
-if (__name__ == "__main__"):
-    file = open('test.cpp', 'r')
+def main(argv):
+    inputfile = ''
+    outputfile = ''
+    try:
+        opts, args = getopt.getopt(argv, "hi:o:", ["ifile=", "ofile="])
+    except getopt.GetoptError:
+        print('test.py -i <inputfile> -o <outputfile>')
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt == '-h':
+            print('test.py -i <inputfile> -o <outputfile>')
+            sys.exit()
+        elif opt in ("-i", "--ifile"):
+            inputfile = arg
+        elif opt in ("-o", "--ofile"):
+            outputfile = arg
 
-    text = file.read()
+    return inputfile, outputfile
 
-    preprcs = Preprocessor(text)
+
+if __name__ == "__main__":
+    input, output = main(sys.argv[1:])
+
+    file = open(input, 'r')
+
+    content = file.read()
+
+    preprcs = Preprocessor(content)
     res = preprcs.preprocess()
-    print(res)
+    write_file = open(output, 'w')
+    write_file.write(res)
