@@ -1,56 +1,118 @@
+import logging
 import re
-
 from collections import deque
+
+logging.basicConfig()
+log = logging.getLogger(__name__)
+logging.root.setLevel(logging.NOTSET)
+logging.basicConfig(level=logging.NOTSET)
 
 
 class funcMacro:
+    """
+    This class stores functional macros
 
-    def __init__(self, declaration, expression):
+    Attributes
+        name        name of function
+        params      list of parameters
+        expression  function expression with parameter in the form of {i} in string
+    """
 
-        split_string = re.split('(\(.*\))', text)
-        self.name = split_string[0]
-        self.parameters = split_string[1][1:-1].split(',')
-        tokens = funcMacro.tokenize_text(expression)
+    def __init__(self, declaration: str, expression: str):
+        """
+        Description:
+        Initialize class to store functional macros
+        :param declaration: function declaration passed in the form of string eg. "add(a,b)"
+        :param expression:  example: "a+b"
+        """
+        split_string = re.split('(\(.*\))', declaration)
+        self.name = text[:text.index('(')]
+
+        self.params = funcMacro.getparams(declaration)
+
+        tokens = Preprocessor(expression).tokenize()
+
+        log.debug(expression)
         for i in range(len(tokens)):
-            if (tokens[i] in self.parameters):
-                tokens[i] = '{' + str(self.parameters.index(tokens[i])) + '}'
+            if (tokens[i] in self.params):
+                tokens[i] = '{' + str(self.params.index(tokens[i])) + '}'
+
         self.expression = ''.join(tokens)
+        log.debug(self.expression)
+
 
     @staticmethod
-    def tokenize_text(text):
-        texts = deque(re.split('(\\n)', text))
-        texts_n = []
+    def getparams(text):
+        """
+        Description: extract text from document
+        :param text:
+        :return:
+        """
 
-        while (texts):
-            token = texts.popleft()
-            if token and token[0] == '#':
-                texts_n += [token]
-                texts_n += ['\n']
+        paramtext = text[text.index('('):]
+
+        param = []
+        word = ''
+        paramtext = deque(paramtext)
+        count = 0
+
+        while (len(paramtext)):
+
+            if (paramtext[0] == '('):
+                count += 1
+                if (count > 1):
+                    word += paramtext.popleft()
+                else:
+                    paramtext.popleft()
+            elif (paramtext[0] == ')'):
+                count -= 1
+                if (count):
+                    word += paramtext.popleft()
+                else:
+                    param += [word]
+                    break
+            elif (count == 1 and paramtext[0] == ','):
+                paramtext.popleft()
+                param += [word]
+                word = ''
             else:
-                texts_n += re.split('( )|(=)|'
-                                    '(;)|({)|(})|([)|(])'
-                                    '|(,)|(>>)|(<<)|(\n)|(<)|(>)', token)
+                word += paramtext.popleft()
+        else:
+            raise Exception("not a functional macro expression" + " " + text)
+        return param
 
-        texts_n = [text for entry in texts_n if entry]
-        return texts_n
+    def replacemacro(self, params):
+        """
+
+        :param params: custom parameter to replace the parameter in the original expression
+        :return: new expression
+        """
+
+        return self.expression.format(*params)
+
+
 
 
 class Preprocessor:
+
     separator = '\n\n'
     __libpath = None
 
-    def __init__(self, text):
+    def __init__(self, text: str):
+
         self.text = text
+        self.func = {}
+        self.macros = {}
         if not Preprocessor.__libpath:
             with open('config.txt', 'r') as conf_file:
                 Preprocessor.__libpath = conf_file.read()
 
     @staticmethod
-    def read_file(filename):
+    def read_file(filename: str) -> str:
         with open(filename, 'r') as cfile:
             return cfile.read()
 
-    def tokenize(self):
+    def tokenize(self) -> list:
         texts = deque(re.split('(\\n)', self.text))
         texts_n = []
 
@@ -67,7 +129,7 @@ class Preprocessor:
         texts_n = [text for text in texts_n if text]
         return texts_n
 
-    def removeComment(self):
+    def removeComment(self) -> list:
         """
         Description: remove comments from text
         :return: text without comments
@@ -104,29 +166,14 @@ class Preprocessor:
 
         return newtext
 
-        '''
-        self.text = re.sub("//.*\n", " \n", self.text)
-        texts = re.split('(".*")|(\'.*\')|(/\*(.|\\n)*\*/)', self.text, flags=re.DOTALL)
-
-        for i in range(len(texts)):
-            if (re.match('^/\*.*\*/$', str(texts[i]), flags=re.DOTALL)):
-                texts[i] = ''
-
-            if not texts[i]:
-                texts[i] = ''
-        self.text = ''.join(texts)
-        return self.text
-        
-        '''
-
-    def preprocess(self):
+    def preprocess(self) -> str:
 
         self.text = self.removeComment()
 
         texts = deque(self.tokenize())
-        macros = {}
+
         newtext = deque()
-        func = {}
+
 
         while (texts):
             text = texts.popleft()
@@ -137,11 +184,11 @@ class Preprocessor:
 
                 if (type == 'MACROS'):
                     textl = re.split(' ', text)
-                    macros[textl[1]] = textl[2]
+                    self.macros[textl[1]] = textl[2]
 
                 elif (type == 'UNDEF'):
                     textl = re.split(' ', text)
-                    del (macros[textl[1]])
+                    del (self.macros[textl[1]])
 
                 elif (type in ('FILEINCL', 'STDLIB')):
                     search = re.search('(".*")|(\'.*\')', text)
@@ -154,34 +201,61 @@ class Preprocessor:
                     newtext.appendleft(processed_nfile)
 
                 elif (type == 'FUNC'):
+
                     textl = re.split(' ', text)
+
                     fmacro = funcMacro(textl[1], textl[2])
                     key = fmacro.name
-                    func[key] = funcMacro
+                    self.func[textl[1][:textl[1].index('(')]] = fmacro
+
 
             else:
-                if (text in macros.keys()):
-                    text = macros[text]
-                newtext.append(text)
-
-                '''
-                elif(text in func.keys()):
-                    next=texts.popleft()
-                    if(next=='('):
-                        count=1
-                        while(count):
-                            n_next=texts.popleft()
-                            if(n_next=='('):
-                                count+=1
+                if (text in self.macros.keys()):
+                    text = self.macros[text]
+                    newtext.append(text)
 
 
-                    else:
-                        texts.appendleft(next)
+
+                elif (text in self.func.keys() and texts[0] == '('):
+                    count = 1
+
+                    next = texts.popleft()
+                    while (texts):
+                        if (texts[0] == '('):
+                            count += 1
+                        elif (texts[0] == ')'):
+                            count -= 1
+                        next += texts.popleft()
+                        if (not count):
+                            break
+                    newtext.append(self.replacefuncmacros(text + next))
+                else:
+                    newtext.append(text)
+
+
+
                         
 
-                '''
 
         return ''.join(list(newtext))
+
+    def replacefuncmacros(self, text) -> str:
+
+        fmacros = self.checkfuncmacros(text)
+        if (fmacros):
+            params = funcMacro.getparams(text)
+            params = [self.replacefuncmacros(param) for param in params]
+            return fmacros.replacemacro(params)
+
+        return text
+
+    def checkfuncmacros(self, text):
+
+        if (re.match('^.+\(.+\)$', text) and text[:text.index('(')] in self.func.keys()):
+            return self.func[text[:text.index('(')]]
+
+        return False
+
 
     def __isPreprocessorDirective(self, text):
         """
