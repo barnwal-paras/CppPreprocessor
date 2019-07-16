@@ -122,7 +122,7 @@ class Preprocessor:
                 texts_n += re.split('( )|(=)|'
                                     '(;)|({)|(})|([)|(])'
                                     '|(,)|(>>)|(<<)|(\\n)|(<)|(>)|'
-                                    '(\+)|(-)|(\*)|(/)', token)
+                                    '(\+)|(-)|(\*)|(/)|(\?)', token)
 
         texts_n = [text for text in texts_n if text]
         return texts_n
@@ -243,7 +243,7 @@ class Preprocessor:
 
     def check_func_macros(self, text):
 
-        if (re.match('^.+\(.+\)$', text) and text[:text.index('(')] in self.func.keys()):
+        if re.match('^.+\(.+\)$', text) and text[:text.index('(')] in self.func.keys():
             return self.func[text[:text.index('(')]]
 
         return False
@@ -285,11 +285,11 @@ def main(argv):
     try:
         opts, args = getopt.getopt(argv, "hi:o:", ["ifile=", "ofile="])
     except getopt.GetoptError:
-        print('test.py -i <inputfile> -o <outputfile>')
+        print('Preprocessor.py -i <inputfile> -o <outputfile>')
         sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('test.py -i <inputfile> -o <outputfile>')
+            print('Preprocessor.py -i <inputfile> -o <outputfile>')
             sys.exit()
         elif opt in ("-i", "--ifile"):
             inputfile = arg
@@ -306,7 +306,8 @@ if __name__ == "__main__":
 
     content = file.read()
 
-    preprcs = Preprocessor(content)
-    res = preprcs.preprocess()
+    Preprocessor_obj = Preprocessor(content)
+    res = Preprocessor_obj.preprocess()
     write_file = open(output, 'w')
     write_file.write(res)
+    write_file.close()
