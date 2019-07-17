@@ -96,6 +96,7 @@ class Preprocessor:
     separator = '\n\n'
     __libpath = None
 
+
     def __init__(self, text: str):
 
         self.text = text
@@ -111,6 +112,7 @@ class Preprocessor:
             return cfile.read()
 
     def tokenize(self) -> list:
+
         texts = deque(re.split('(\\n)', self.text))
         texts_n = []
 
@@ -127,29 +129,30 @@ class Preprocessor:
         texts_n = [text for text in texts_n if text]
         return texts_n
 
-    def remove_comment(self) -> list:
+    def remove_comment(self) -> str:
         """
         Description: remove comments from text
         :return: text without comments
         """
+
         text: deque[str] = deque(self.text)
         quote = False
-        newtext = ''
+        new_text = ''
         while text:
             char = text.popleft()
             if char == '"':
                 quote = not quote
-                newtext += char
+                new_text += char
             elif char == '\n':
                 quote = False
-                newtext += char
+                new_text += char
             elif char == '/' and quote == False:
                 next = text.popleft()
                 if next == '/':
                     while text.popleft() != '\n':
                         continue
                     else:
-                        newtext += '\n'
+                        new_text += '\n'
                 elif next == '*':
 
                     while text.popleft() != '*' or text[0] != '/':
@@ -157,12 +160,12 @@ class Preprocessor:
                     else:
                         text.popleft()
                 else:
-                    newtext += char
-                    newtext += next
+                    new_text += char
+                    new_text += next
             else:
-                newtext += char
+                new_text += char
 
-        return newtext
+        return new_text
 
     def preprocess(self) -> str:
 
@@ -170,7 +173,7 @@ class Preprocessor:
 
         texts = deque(self.tokenize())
 
-        newtext = deque()
+        new_text = deque()
 
         while texts:
             text = texts.popleft()
@@ -195,7 +198,7 @@ class Preprocessor:
                     else:
                         nfile = Preprocessor.read_file(Preprocessor.__libpath + filename)
                     processed_nfile = Preprocessor(nfile).preprocess()
-                    newtext.appendleft(processed_nfile)
+                    new_text.appendleft(processed_nfile)
 
                 elif type == 'FUNC':
 
@@ -205,11 +208,47 @@ class Preprocessor:
                     key = fmacro.name
                     self.func[textl[1][:textl[1].index('(')]] = fmacro
 
+                elif type in ('IF', 'ELIF', 'IFDEF', 'IFNDEF'):
+                    text = text[1:]
+                    if type == 'IF' or (type == 'ELIF' and condition is True):
+                        condition = self.eval_dir_cond(text)
+                    elif type == 'IFDEF':
+                        keyword = text.split(' ')[1]
+                        if keyword in self.func.keys() or keyword in self.macros.keys():
+                            condition = True
+                        else:
+                            condition = False
+                    elif type == 'IFNDEF':
+                        keyword = text.split(' ')[1]
+                        if keyword in self.func.keys() or keyword in self.macros.keys():
+                            condition = False
+                        else:
+                            condition = True
 
+                    else:
+                        condition = False
+                    block = ''
+                    count = 0
+                    while not (count == 1) and texts:
+                        block += texts.popleft()
+                        if self.__is_preprocessor_directive(texts[0]):
+                            if self.__check_dirtype(texts[0]) in ("IF", "IFDEF", "IFNDEF"):
+                                count -= 1
+                            elif self.__check_dirtype(texts[0]) in ("ELSE", "ENDIF", "ELIF"):
+                                count += 1
+                    if condition:
+                        preprocessor_obj = Preprocessor(block)
+                        preprocessor_obj.macros = self.macros
+                        preprocessor_obj.func = self.func
+                        new_text.append(preprocessor_obj.preprocess())
+                        self.macros = preprocessor_obj.macros
+                        self.func = preprocessor_obj.func
+                elif type in 'ENDIF':
+                    pass
             else:
                 if text in self.macros.keys():
                     text = self.macros[text]
-                    newtext.append(text)
+                    new_text.append(text)
 
 
 
@@ -225,11 +264,31 @@ class Preprocessor:
                         next += texts.popleft()
                         if not count:
                             break
-                    newtext.append(self.replace_func_macros(text + next))
+                    new_text.append(self.replace_func_macros(text + next))
                 else:
-                    newtext.append(text)
+                    new_text.append(text)
 
-        return ''.join(list(newtext))
+        return ''.join(list(new_text))
+
+    def eval_dir_cond(self, text) -> bool:
+        def_statements = re.findall('defined\s*\S*', text)
+
+        sub = {"\|\|": " or ", "\&&": " and ", "!": " not "}
+
+        for cond in def_statements:
+            keywords = cond.split(' ')
+            keyword = re.sub('[()]', '', keywords[1])
+            if keyword in self.macros.keys() or keyword in self.func.keys():
+                sub[cond] = 'True'
+            else:
+                sub[cond] = 'False'
+
+        for key in sub.keys():
+            text = re.sub(key, sub[key], text)
+        for key in self.macros.keys():
+            text = re.sub(key, self.macros[key], text)
+
+        return eval(text[2:])
 
     def replace_func_macros(self, text) -> str:
 
@@ -241,7 +300,7 @@ class Preprocessor:
 
         return text
 
-    def check_func_macros(self, text):
+    def check_func_macros(self, text) -> bool:
 
         if re.match('^.+\(.+\)$', text) and text[:text.index('(')] in self.func.keys():
             return self.func[text[:text.index('(')]]
@@ -249,7 +308,7 @@ class Preprocessor:
         return False
 
     @staticmethod
-    def __is_preprocessor_directive(text):
+    def __is_preprocessor_directive(text) -> bool:
         """
         Description:
         :param text:
@@ -260,7 +319,7 @@ class Preprocessor:
         return False
 
     @staticmethod
-    def __check_dirtype(text):
+    def __check_dirtype(text) -> str:
 
         texts = re.split(' ', text)
 
@@ -277,6 +336,16 @@ class Preprocessor:
 
         if re.match('^#include( )*(".*")|(\'.*\')', text):
             return 'FILEINCL'
+        if texts[0] == '#if':
+            return 'IF'
+        if texts[0] == '#ifdef':
+            return 'IFDEF'
+        if texts[0] == '#else':
+            return 'ELSE'
+        if texts[0] == '#endif':
+            return 'ENDIF'
+
+
 
 
 def main(argv):
