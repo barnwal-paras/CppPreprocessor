@@ -1,10 +1,10 @@
 import datetime
 import getopt
 import logging
+import os
 import re
 import sys
 from collections import deque
-
 
 logging.basicConfig()
 log = logging.getLogger(__name__)
@@ -107,8 +107,16 @@ class Preprocessor:
         self.func = {}
         self.macros = {}
         self.__add_predefined_macros()
+
+        path = os.path.realpath(__file__)
+        path = list(path)
+
+        while path[-1] != '/':
+            path.pop()
+        path = ''.join(path)
+
         if not Preprocessor.__libpath:
-            with open('config.txt', 'r') as conf_file:
+            with open(path + 'config.txt', 'r') as conf_file:
                 Preprocessor.__libpath = conf_file.read()
 
     def __add_predefined_macros(self):
@@ -118,6 +126,7 @@ class Preprocessor:
         predefined_macro['__TIME__'] = '{}:{}:{}'.format(datetime.datetime.now().hour, datetime.datetime.now().minute,
                                                          datetime.datetime.now().second)
         predefined_macro['__STDC__'] = "1"
+        predefined_macro['__cplusplus'] = "201402"
         self.macros = {**self.macros, **predefined_macro}
 
     @staticmethod
@@ -341,8 +350,11 @@ class Preprocessor:
 
             if self.macros[key]:
                 text = text.replace(key, self.macros[key])
+        try:
+            return eval(text[2:])
+        except SyntaxError:
+            return eval(text[2:-1])
 
-        return eval(text[2:])
 
     def replace_func_macros(self, text) -> str:
         """
@@ -447,3 +459,4 @@ if __name__ == "__main__":
     write_file = open(output_file, 'w')
     write_file.write(res)
     write_file.close()
+    print(os.path.realpath(__file__))
