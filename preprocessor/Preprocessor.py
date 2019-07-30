@@ -1,9 +1,9 @@
+import argparse
 import datetime
-import getopt
+# import getopt
 import logging
 import os
 import re
-import sys
 from collections import deque
 
 logging.basicConfig()
@@ -11,6 +11,14 @@ log = logging.getLogger(__name__)
 logging.root.setLevel(logging.NOTSET)
 logging.basicConfig(level=logging.NOTSET)
 
+parser = argparse.ArgumentParser()
+parser.add_argument("-i", "--input", help="input file", action="store",
+                    type=str, required=True)
+parser.add_argument("-o", "--output", help="output file", action="store",
+                    type=str, required=False)
+parser.add_argument('-d', '--cpp_directories', action='append',
+                    help='list of path where c plus plus library files are located', required=False)
+res = parser.parse_args()
 
 class functional_Macro:
     """
@@ -95,19 +103,18 @@ class Preprocessor:
         self.text   stores the text file
         self.func   dictionary to store functional macros
         self.macros dictionary to store macros
-        __libpath   path of cplusplus header files
+        self.lib_path   list of path of cplusplus header files
     """
 
     separator = '\n\n'
-    __libpath = None
 
-    def __init__(self, text: str):
+    def __init__(self, text: str, dir=[]):
 
         self.text = text
         self.func = {}
         self.macros = {}
         self.__add_predefined_macros()
-
+        self.lib_paths = dir
         path = os.path.realpath(__file__)
         path = list(path)
 
@@ -115,9 +122,7 @@ class Preprocessor:
             path.pop()
         path = ''.join(path)
 
-        if not Preprocessor.__libpath:
-            with open(path + 'config.txt', 'r') as conf_file:
-                Preprocessor.__libpath = conf_file.read()
+
 
     def __add_predefined_macros(self):
         predefined_macro = dict()
@@ -193,6 +198,12 @@ class Preprocessor:
 
         return new_text
 
+    def get_lib_path(self, filename):
+        for dir in self.lib_paths:
+            if filename in os.listdir(dir):
+                return dir + filename
+        raise Exception('{} not found'.format(filename))
+
     def preprocess(self) -> str:
         """
         Description: This function preprocess given code stored in class attribute self.text
@@ -221,7 +232,12 @@ class Preprocessor:
 
                 elif type == 'UNDEF':
                     textl = re.split(' ', text)
-                    del (self.macros[textl[1]])
+                    if textl[1] in self.macros.keys():
+                        del (self.macros[textl[1]])
+                    elif textl[1] in self.func.keys():
+                        del (self.func[textl[1]])
+                    else:
+                        raise Exception('keyword {} not defined'.format(textl[1]))
 
                 elif type in ('FILEINCL', 'STDLIB'):
                     if type == 'FILEINCL':
@@ -231,9 +247,9 @@ class Preprocessor:
                     else:
                         search = re.search('<\S*>', text)
                         filename = text[search.start() + 1:search.end() - 1]
-                        nfile = Preprocessor.read_file(Preprocessor.__libpath + filename)
+                        nfile = Preprocessor.read_file(self.get_lib_path(filename))
                     log.debug('loading:' + filename)
-                    processed_newfile = Preprocessor(nfile)
+                    processed_newfile = Preprocessor(nfile, self.lib_paths)
 
                     processed_newtext = processed_newfile.preprocess()
                     self.macros = {**self.macros, **processed_newfile.macros}
@@ -282,20 +298,16 @@ class Preprocessor:
 
 
                     if condition:
-                        preprocessor_obj = Preprocessor(block[0])
-                        preprocessor_obj.macros = self.macros
-                        preprocessor_obj.func = self.func
+                        preprocessor_obj = Preprocessor(block[0], self.lib_paths)
+                        preprocessor_obj.macros, preprocessor_obj.func = (self.macros, self.func)
                         new_text.append(preprocessor_obj.preprocess())
-                        self.macros = preprocessor_obj.macros
-                        self.func = preprocessor_obj.func
+                        self.macros, self.func = (preprocessor_obj.macros, preprocessor_obj.func)
                     else:
 
-                        preprocessor_obj = Preprocessor(block[1])
-                        preprocessor_obj.macros = self.macros
-                        preprocessor_obj.func = self.func
+                        preprocessor_obj = Preprocessor(block[1], self.lib_paths)
+                        preprocessor_obj.macros, preprocessor_obj.func = (self.macros, self.func)
                         new_text.append(preprocessor_obj.preprocess())
-                        self.macros = preprocessor_obj.macros
-                        self.func = preprocessor_obj.func
+                        self.macros, self.func = (preprocessor_obj.macros, preprocessor_obj.func)
                 elif type is 'ENDIF':
                     continue
                 else:
@@ -320,7 +332,7 @@ class Preprocessor:
                     new_text.append(self.replace_func_macros(text + next))
                 else:
                     new_text.append(text)
-
+        new_text = [textt for textt in new_text if textt]
         return ''.join(list(new_text))
 
     def eval_if_condition(self, text) -> bool:
@@ -428,32 +440,17 @@ class Preprocessor:
             return 'IFNDEF'
 
 
-def main(argv):
-    try:
-        opts, args = getopt.getopt(argv, "hi:o:", ["ifile=", "ofile="])
-    except getopt.GetoptError:
-        print('Preprocessor.py -i <inputfile> -o <outputfile>')
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt == '-h':
-            print('Preprocessor.py -i <inputfile> -o <outputfile>')
-            sys.exit()
-        elif opt in ("-i", "--ifile"):
-            inputfile = arg
-        elif opt in ("-o", "--ofile"):
-            outputfile = arg
-
-    return inputfile, outputfile
-
-
 if __name__ == "__main__":
-    input_file, output_file = main(sys.argv[1:])
+    for dir in res.cpp_directories:
+        print(dir)
+
+    input_file, output_file = (res.input, res.output)
 
     file = open(input_file, 'r')
 
     content = file.read()
 
-    Preprocessor_obj = Preprocessor(content)
+    Preprocessor_obj = Preprocessor(content, res.cpp_directories)
     res = Preprocessor_obj.preprocess()
 
     write_file = open(output_file, 'w')
